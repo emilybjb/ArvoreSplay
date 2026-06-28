@@ -16,6 +16,10 @@ struct Cache {
     size_t size;
 
     Page* pages;
+
+    size_t hits;
+    size_t misses;
+    size_t total_accesses;
 };
 
 Cache* cache_open(const char* filename, size_t capacity) {
