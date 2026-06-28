@@ -81,14 +81,18 @@ int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
     cache->misses++;
 
     if (cache->size >= cache->capacity) {
+        cache->evictions++;
+    
         if (cache->pages[0].dirty) {
             fseek(cache->file, cache->pages[0].page_id * BLOCK_SIZE, SEEK_SET);
             fwrite(cache->pages[0].data, 1, BLOCK_SIZE, cache->file);
+    
+            cache->dirty_writes++;
         }
-
+    
         memmove(&cache->pages[0], &cache->pages[1],
                 sizeof(Page) * (cache->capacity - 1));
-
+    
         cache->size--;
     }
 
@@ -125,6 +129,9 @@ int cache_flush(Cache* cache) {
         if (cache->pages[i].dirty) {
             fseek(cache->file, cache->pages[i].page_id * BLOCK_SIZE, SEEK_SET);
             fwrite(cache->pages[i].data, 1, BLOCK_SIZE, cache->file);
+        
+            cache->dirty_writes++;
+        
             cache->pages[i].dirty = 0;
         }
     }

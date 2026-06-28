@@ -1,32 +1,33 @@
 #include "cache.h"
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 int main() {
-    Cache* cache = cache_open("data.bin", 4);
+    Cache* cache = cache_open("data.bin", 8);
 
     if (cache == NULL) {
         printf("Erro ao abrir o cache.\n");
         return 1;
     }
 
-    char write_buffer[BLOCK_SIZE];
-    char read_buffer[BLOCK_SIZE];
+    char buffer[BLOCK_SIZE];
 
-    memset(write_buffer, 'A', BLOCK_SIZE);
+    clock_t start = clock();
 
-    cache_write(cache, 0, write_buffer);
+    for (int i = 0; i < 10000; i++) {
+        uint64_t page_id = i % 16;
 
-    cache_read(cache, 0, read_buffer); 
-    cache_read(cache, 1, read_buffer);
-    cache_read(cache, 2, read_buffer); 
-    cache_read(cache, 0, read_buffer); 
-    cache_read(cache, 3, read_buffer);
-    cache_read(cache, 0, read_buffer);
+        cache_read(cache, page_id, buffer);
+    }
 
-    printf("Primeiro byte lido: %c\n", read_buffer[0]);
+    clock_t end = clock();
+
+    double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
 
     cache_print_stats(cache);
+
+    printf("Tempo de execucao: %.6f segundos\n", elapsed);
 
     cache_close(cache);
 
