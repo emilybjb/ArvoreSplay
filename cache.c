@@ -128,6 +128,20 @@ int cache_flush(Cache* cache) {
     return 0;
 }
 
+void cache_print_stats(Cache* cache) {
+    double hit_ratio = 0.0;
+
+    if (cache->total_accesses > 0) {
+        hit_ratio = (double) cache->hits / cache->total_accesses;
+    }
+
+    printf("\n===== Estatisticas do Cache =====\n");
+    printf("Total de acessos: %zu\n", cache->total_accesses);
+    printf("Hits: %zu\n", cache->hits);
+    printf("Misses: %zu\n", cache->misses);
+    printf("Hit ratio: %.2f%%\n", hit_ratio * 100.0);
+}
+
 void cache_close(Cache* cache) {
     if (!cache) return;
 
