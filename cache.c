@@ -38,6 +38,9 @@ Cache* cache_open(const char* filename, size_t capacity) {
 
     cache->capacity = capacity;
     cache->size = 0;
+    cache->hits = 0;
+    cache->misses = 0;
+    cache->total_accesses = 0;
     cache->pages = calloc(capacity, sizeof(Page));
 
     if (!cache->pages) {
@@ -60,15 +63,19 @@ static int find_page(Cache* cache, uint64_t page_id) {
 }
 
 int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
+    cache->total_accesses++;
+
     int index = find_page(cache, page_id);
 
     if (index >= 0) {
+        cache->hits++;
         memcpy(buffer, cache->pages[index].data, BLOCK_SIZE);
-        return 1; // hit
+        return 1; 
     }
 
+    cache->misses++;
+
     if (cache->size >= cache->capacity) {
-        // por enquanto, remove sempre a primeira página
         if (cache->pages[0].dirty) {
             fseek(cache->file, cache->pages[0].page_id * BLOCK_SIZE, SEEK_SET);
             fwrite(cache->pages[0].data, 1, BLOCK_SIZE, cache->file);
@@ -91,7 +98,7 @@ int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
 
     cache->size++;
 
-    return 0; // miss
+    return 0; 
 }
 
 int cache_write(Cache* cache, uint64_t page_id, const void* buffer) {
