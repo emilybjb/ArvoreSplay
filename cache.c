@@ -1,4 +1,3 @@
-// cache.c
 #include "cache.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +7,7 @@ typedef struct Page {
     uint64_t page_id;
     char data[BLOCK_SIZE];
     int dirty;
+    size_t last_used;
 } Page;
 
 struct Cache {
@@ -23,6 +23,8 @@ struct Cache {
 
     size_t evictions;
     size_t dirty_writes;
+
+    size_t clock;
 };
 
 Cache* cache_open(const char* filename, size_t capacity) {
@@ -46,6 +48,7 @@ Cache* cache_open(const char* filename, size_t capacity) {
     cache->total_accesses = 0;
     cache->evictions = 0;
     cache->dirty_writes = 0;
+    cache->clock = 0;
     cache->pages = calloc(capacity, sizeof(Page));
 
     if (!cache->pages) {
@@ -55,6 +58,20 @@ Cache* cache_open(const char* filename, size_t capacity) {
     }
 
     return cache;
+}
+
+static int find_lru_page(Cache* cache) {
+    size_t lru_index = 0;
+    size_t menor_uso = cache->pages[0].last_used;
+
+    for (size_t i = 1; i < cache->size; i++) {
+        if (cache->pages[i].last_used < menor_uso) {
+            menor_uso = cache->pages[i].last_used;
+            lru_index = i;
+        }
+    }
+
+    return (int) lru_index;
 }
 
 static int find_page(Cache* cache, uint64_t page_id) {
@@ -69,36 +86,42 @@ static int find_page(Cache* cache, uint64_t page_id) {
 
 int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
     cache->total_accesses++;
+    cache->clock++;
 
     int index = find_page(cache, page_id);
 
     if (index >= 0) {
         cache->hits++;
+
+        cache->pages[index].last_used = cache->clock;
+
         memcpy(buffer, cache->pages[index].data, BLOCK_SIZE);
-        return 1; 
+        return 1;
     }
 
     cache->misses++;
 
     if (cache->size >= cache->capacity) {
         cache->evictions++;
-    
-        if (cache->pages[0].dirty) {
-            fseek(cache->file, cache->pages[0].page_id * BLOCK_SIZE, SEEK_SET);
-            fwrite(cache->pages[0].data, 1, BLOCK_SIZE, cache->file);
-    
+
+        int lru_index = find_lru_page(cache);
+
+        if (cache->pages[lru_index].dirty) {
+            fseek(cache->file, cache->pages[lru_index].page_id * BLOCK_SIZE, SEEK_SET);
+            fwrite(cache->pages[lru_index].data, 1, BLOCK_SIZE, cache->file);
+
             cache->dirty_writes++;
         }
-    
-        memmove(&cache->pages[0], &cache->pages[1],
-                sizeof(Page) * (cache->capacity - 1));
-    
+
+        cache->pages[lru_index] = cache->pages[cache->size - 1];
         cache->size--;
     }
 
     Page* page = &cache->pages[cache->size];
+
     page->page_id = page_id;
     page->dirty = 0;
+    page->last_used = cache->clock;
 
     fseek(cache->file, page_id * BLOCK_SIZE, SEEK_SET);
     fread(page->data, 1, BLOCK_SIZE, cache->file);
@@ -107,7 +130,7 @@ int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
 
     cache->size++;
 
-    return 0; 
+    return 0;
 }
 
 int cache_write(Cache* cache, uint64_t page_id, const void* buffer) {
