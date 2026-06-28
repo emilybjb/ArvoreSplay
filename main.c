@@ -5,6 +5,11 @@
 int main() {
     Cache* cache = cache_open("data.bin", 4);
 
+    if (cache == NULL) {
+        printf("Erro ao abrir o cache.\n");
+        return 1;
+    }
+
     char write_buffer[BLOCK_SIZE];
     char read_buffer[BLOCK_SIZE];
 
@@ -12,11 +17,16 @@ int main() {
 
     cache_write(cache, 0, write_buffer);
 
-    memset(read_buffer, 0, BLOCK_SIZE);
-
+    cache_read(cache, 0, read_buffer); 
+    cache_read(cache, 1, read_buffer);
+    cache_read(cache, 2, read_buffer); 
+    cache_read(cache, 0, read_buffer); 
+    cache_read(cache, 3, read_buffer);
     cache_read(cache, 0, read_buffer);
 
     printf("Primeiro byte lido: %c\n", read_buffer[0]);
+
+    cache_print_stats(cache);
 
     cache_close(cache);
 
