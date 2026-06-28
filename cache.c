@@ -44,6 +44,8 @@ Cache* cache_open(const char* filename, size_t capacity) {
     cache->hits = 0;
     cache->misses = 0;
     cache->total_accesses = 0;
+    cache->evictions = 0;
+    cache->dirty_writes = 0;
     cache->pages = calloc(capacity, sizeof(Page));
 
     if (!cache->pages) {
@@ -138,11 +140,13 @@ void cache_print_stats(Cache* cache) {
         hit_ratio = (double) cache->hits / cache->total_accesses;
     }
 
-    printf("\n===== Estatisticas do Cache =====\n");
+    printf("\n===== Estatísticas do Cache =====\n");
     printf("Total de acessos: %zu\n", cache->total_accesses);
-    printf("Hits: %zu\n", cache->hits);
-    printf("Misses: %zu\n", cache->misses);
-    printf("Hit ratio: %.2f%%\n", hit_ratio * 100.0);
+    printf("Acertos (Hits): %zu\n", cache->hits);
+    printf("Faltas (Misses): %zu\n", cache->misses);
+    printf("Taxa de acertos: %.2f%%\n", hit_ratio * 100.0);
+    printf("Páginas removidas: %zu\n", cache->evictions);
+    printf("Páginas sujas gravadas: %zu\n", cache->dirty_writes);
 }
 
 void cache_close(Cache* cache) {
