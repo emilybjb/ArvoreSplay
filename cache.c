@@ -89,3 +89,40 @@ int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
 
     return 0; // miss
 }
+
+int cache_write(Cache* cache, uint64_t page_id, const void* buffer) {
+    char temp[BLOCK_SIZE];
+
+    int hit = cache_read(cache, page_id, temp);
+
+    int index = find_page(cache, page_id);
+    if (index < 0) return -1;
+
+    memcpy(cache->pages[index].data, buffer, BLOCK_SIZE);
+    cache->pages[index].dirty = 1;
+
+    return hit;
+}
+
+int cache_flush(Cache* cache) {
+    for (size_t i = 0; i < cache->size; i++) {
+        if (cache->pages[i].dirty) {
+            fseek(cache->file, cache->pages[i].page_id * BLOCK_SIZE, SEEK_SET);
+            fwrite(cache->pages[i].data, 1, BLOCK_SIZE, cache->file);
+            cache->pages[i].dirty = 0;
+        }
+    }
+
+    fflush(cache->file);
+    return 0;
+}
+
+void cache_close(Cache* cache) {
+    if (!cache) return;
+
+    cache_flush(cache);
+
+    fclose(cache->file);
+    free(cache->pages);
+    free(cache);
+}
