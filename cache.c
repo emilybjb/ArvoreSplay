@@ -20,6 +20,9 @@ struct Cache {
     size_t hits;
     size_t misses;
     size_t total_accesses;
+
+    size_t evictions;
+    size_t dirty_writes;
 };
 
 Cache* cache_open(const char* filename, size_t capacity) {
