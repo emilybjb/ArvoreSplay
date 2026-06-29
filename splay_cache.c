@@ -182,6 +182,20 @@ static SplayNode *insert_node(SplayCache *cache, uint64_t page_id) {
     return node;
 }
 
+int splay_cache_read(SplayCache *cache, uint64_t page_id, char *out) {
+    SplayNode *node = find_node(cache, page_id);
+
+    if (node) {
+        memcpy(out, node->data, BLOCK_SIZE);
+        return 1; // hit
+    }
+
+    node = insert_node(cache, page_id);
+    memcpy(out, node->data, BLOCK_SIZE);
+
+    return 0; // miss
+}
+
 static SplayNode *find_cold_leaf(SplayNode *root) {
     if (!root) return NULL;
 
