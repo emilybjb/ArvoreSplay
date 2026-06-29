@@ -187,13 +187,23 @@ int splay_cache_read(SplayCache *cache, uint64_t page_id, char *out) {
 
     if (node) {
         memcpy(out, node->data, BLOCK_SIZE);
-        return 1; // hit
+        return 1;
     }
 
     node = insert_node(cache, page_id);
     memcpy(out, node->data, BLOCK_SIZE);
 
-    return 0; // miss
+    return 0;
+}
+
+void splay_cache_write(SplayCache *cache, uint64_t page_id, const char *data) {
+    SplayNode *node = find_node(cache, page_id);
+
+    if (!node) {
+        node = insert_node(cache, page_id);
+    }
+
+    memcpy(node->data, data, BLOCK_SIZE);
 }
 
 static SplayNode *find_cold_leaf(SplayNode *root) {
