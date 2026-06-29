@@ -181,3 +181,61 @@ static SplayNode *insert_node(SplayCache *cache, uint64_t page_id) {
     cache->size++;
     return node;
 }
+
+static SplayNode *find_cold_leaf(SplayNode *root) {
+    if (!root) return NULL;
+
+    SplayNode *stack[1024];
+    int depth[1024];
+    int top = 0;
+
+    SplayNode *best = NULL;
+    int best_depth = -1;
+
+    stack[top] = root;
+    depth[top++] = 0;
+
+    while (top) {
+        SplayNode *n = stack[--top];
+        int d = depth[top];
+
+        if (!n->left && !n->right) {
+            if (d > best_depth) {
+                best = n;
+                best_depth = d;
+            }
+        }
+
+        if (n->left) {
+            stack[top] = n->left;
+            depth[top++] = d + 1;
+        }
+
+        if (n->right) {
+            stack[top] = n->right;
+            depth[top++] = d + 1;
+        }
+    }
+
+    return best;
+}
+
+static void remove_node(SplayCache *cache, SplayNode *node) {
+    if (!node) return;
+
+    splay(cache, node);
+
+    if (!node->left) {
+        cache->root = node->right;
+    } else {
+        SplayNode *x = node->left;
+        while (x->right) x = x->right;
+
+        splay(cache, x);
+        x->right = node->right;
+        cache->root = x;
+    }
+
+    free(node);
+    cache->size--;
+}
