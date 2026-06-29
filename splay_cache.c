@@ -239,3 +239,18 @@ static void remove_node(SplayCache *cache, SplayNode *node) {
     free(node);
     cache->size--;
 }
+
+static void flush_tree(SplayNode *root) {
+    if (!root) return;
+
+    flush_tree(root->left);
+    flush_tree(root->right);
+}
+
+static void free_tree(SplayNode *root) {
+    if (!root) return;
+
+    free_tree(root->left);
+    free_tree(root->right);
+    free(root);
+}
