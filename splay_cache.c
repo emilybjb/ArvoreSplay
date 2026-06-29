@@ -206,6 +206,27 @@ void splay_cache_write(SplayCache *cache, uint64_t page_id, const char *data) {
     memcpy(node->data, data, BLOCK_SIZE);
 }
 
+static int calc_depth(SplayNode *root, int d) {
+    if (!root) return 0;
+
+    return d +
+        calc_depth(root->left, d + 1) +
+        calc_depth(root->right, d + 1);
+}
+
+double splay_cache_avg_depth(SplayCache *cache) {
+    if (!cache->root) return 0.0;
+
+    int total = calc_depth(cache->root, 1);
+    return (double)total / cache->size;
+}
+
+void splay_cache_print_stats(SplayCache *cache) {
+    printf("size=%zu avg_depth=%.2f\n",
+           cache->size,
+           splay_cache_avg_depth(cache));
+}
+
 static SplayNode *find_cold_leaf(SplayNode *root) {
     if (!root) return NULL;
 
@@ -277,4 +298,11 @@ static void free_tree(SplayNode *root) {
     free_tree(root->left);
     free_tree(root->right);
     free(root);
+}
+
+void splay_cache_close(SplayCache *cache) {
+    if (!cache) return;
+
+    free_tree(cache->root);
+    free(cache);
 }
