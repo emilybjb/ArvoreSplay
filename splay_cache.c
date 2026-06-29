@@ -130,3 +130,54 @@ SplayCache *splay_cache_open(const char *filename, size_t capacity)
 
     return sc;
 }
+
+static SplayNode *find_node(SplayCache *cache, uint64_t page_id) {
+    SplayNode *cur = cache->root;
+
+    while (cur) {
+        if (page_id == cur->page_id) {
+            splay(cache, cur);
+            return cur;
+        }
+
+        cur = (page_id < cur->page_id) ? cur->left : cur->right;
+    }
+
+    return NULL;
+}
+
+static SplayNode *insert_node(SplayCache *cache, uint64_t page_id) {
+    SplayNode *parent = NULL;
+    SplayNode *cur = cache->root;
+
+    while (cur) {
+        parent = cur;
+
+        if (page_id < cur->page_id)
+            cur = cur->left;
+        else if (page_id > cur->page_id)
+            cur = cur->right;
+        else {
+            splay(cache, cur);
+            return cur;
+        }
+    }
+
+    SplayNode *node = calloc(1, sizeof(SplayNode));
+    node->page_id = page_id;
+    node->parent = parent;
+
+    if (!parent) {
+        cache->root = node;
+    } else if (page_id < parent->page_id) {
+        parent->left = node;
+    } else {
+        parent->right = node;
+    }
+
+    splay(cache, node);
+    cache->root = node;
+
+    cache->size++;
+    return node;
+}
