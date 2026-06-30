@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 typedef struct Page {
     uint64_t page_id;
@@ -25,6 +26,8 @@ struct Cache {
     size_t dirty_writes;
 
     size_t clock;
+
+    pthread_mutex_t mutex;
 };
 
 Cache* cache_open(const char* filename, size_t capacity) {
@@ -56,7 +59,7 @@ Cache* cache_open(const char* filename, size_t capacity) {
         free(cache);
         return NULL;
     }
-
+    pthread_mutex_init(&cache->mutex, NULL);
     return cache;
 }
 
@@ -85,6 +88,8 @@ static int find_page(Cache* cache, uint64_t page_id) {
 }
 
 int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
+    pthread_mutex_lock(&cache->mutex);
+
     cache->total_accesses++;
     cache->clock++;
 
@@ -96,6 +101,9 @@ int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
         cache->pages[index].last_used = cache->clock;
 
         memcpy(buffer, cache->pages[index].data, BLOCK_SIZE);
+
+        pthread_mutex_unlock(&cache->mutex);
+
         return 1;
     }
 
@@ -130,21 +138,63 @@ int cache_read(Cache* cache, uint64_t page_id, void* buffer) {
 
     cache->size++;
 
+    pthread_mutex_unlock(&cache->mutex);
+
     return 0;
 }
 
 int cache_write(Cache* cache, uint64_t page_id, const void* buffer) {
-    char temp[BLOCK_SIZE];
+    if (!cache || !buffer) return -1;
 
-    int hit = cache_read(cache, page_id, temp);
+    pthread_mutex_lock(&cache->mutex);
+
+    cache->total_accesses++;
+    cache->clock++;
 
     int index = find_page(cache, page_id);
-    if (index < 0) return -1;
 
-    memcpy(cache->pages[index].data, buffer, BLOCK_SIZE);
-    cache->pages[index].dirty = 1;
+    if (index >= 0) {
+        cache->hits++;
 
-    return hit;
+        cache->pages[index].last_used = cache->clock;
+        memcpy(cache->pages[index].data, buffer, BLOCK_SIZE);
+        cache->pages[index].dirty = 1;
+
+        pthread_mutex_unlock(&cache->mutex);
+        return 1;
+    }
+
+    cache->misses++;
+
+    if (cache->size >= cache->capacity) {
+        cache->evictions++;
+
+        int lru_index = find_lru_page(cache);
+
+        if (cache->pages[lru_index].dirty) {
+            fseek(cache->file, cache->pages[lru_index].page_id * BLOCK_SIZE, SEEK_SET);
+            fwrite(cache->pages[lru_index].data, 1, BLOCK_SIZE, cache->file);
+
+            cache->dirty_writes++;
+        }
+
+        cache->pages[lru_index] = cache->pages[cache->size - 1];
+        cache->size--;
+    }
+
+    Page* page = &cache->pages[cache->size];
+
+    page->page_id = page_id;
+    page->dirty = 1;
+    page->last_used = cache->clock;
+
+    memcpy(page->data, buffer, BLOCK_SIZE);
+
+    cache->size++;
+
+    pthread_mutex_unlock(&cache->mutex);
+
+    return 0;
 }
 
 int cache_flush(Cache* cache) {

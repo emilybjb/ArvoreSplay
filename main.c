@@ -24,11 +24,11 @@ uint64_t gerar_zipfiano() {
     double r = (double) rand() / RAND_MAX;
 
     if (r < 0.50) {
-        return rand() % 4;          // páginas muito quentes
+        return rand() % 4;          
     } else if (r < 0.80) {
-        return 4 + (rand() % 12);   // páginas médias
+        return 4 + (rand() % 12);  
     } else {
-        return 16 + (rand() % 48);  // páginas frias
+        return 16 + (rand() % 48); 
     }
 }
 

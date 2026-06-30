@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 typedef struct SplayNode {
     uint64_t page_id;
@@ -29,6 +30,8 @@ struct SplayCache {
 
     size_t evictions;
     size_t dirty_writes;
+
+    pthread_mutex_t mutex;
 };
 
 static void rotate_right(SplayCache* sc, SplayNode* y) {
@@ -130,6 +133,8 @@ SplayCache *splay_cache_open(const char *filename, size_t capacity)
     sc->size = 0;
     sc->root = NULL;
 
+    pthread_mutex_init(&sc->mutex, NULL);
+    
     return sc;
 }
 
