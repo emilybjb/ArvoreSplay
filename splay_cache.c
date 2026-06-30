@@ -134,7 +134,7 @@ SplayCache *splay_cache_open(const char *filename, size_t capacity)
     sc->root = NULL;
 
     pthread_mutex_init(&sc->mutex, NULL);
-    
+
     return sc;
 }
 
@@ -297,14 +297,18 @@ static SplayNode *insert_node(SplayCache *cache, uint64_t page_id) {
 
 int splay_cache_read(SplayCache *cache, uint64_t page_id, void *buffer) {
     if (!cache || !buffer) return -1;
- 
+
+    pthread_mutex_lock(&cache->mutex);
+
     cache->total_accesses++;
- 
+
     SplayNode *node = find_node(cache, page_id);
- 
+
     if (node) {
         cache->hits++;
         memcpy(buffer, node->data, BLOCK_SIZE);
+
+        pthread_mutex_unlock(&cache->mutex);
         return 1;
     }
 
@@ -313,7 +317,10 @@ int splay_cache_read(SplayCache *cache, uint64_t page_id, void *buffer) {
     evict_if_needed(cache);
 
     node = insert_node(cache, page_id);
-    if (!node) return -1;
+    if (!node) {
+        pthread_mutex_unlock(&cache->mutex);
+        return -1;
+    }
 
     long offset = (long)page_id * BLOCK_SIZE;
 
@@ -329,30 +336,43 @@ int splay_cache_read(SplayCache *cache, uint64_t page_id, void *buffer) {
 
     memcpy(buffer, node->data, BLOCK_SIZE);
 
+    pthread_mutex_unlock(&cache->mutex);
     return 0;
 }
 
 int splay_cache_write(SplayCache *cache, uint64_t page_id, const void *buffer) {
     if (!cache || !buffer) return -1;
- 
+
+    pthread_mutex_lock(&cache->mutex);
+
     cache->total_accesses++;
- 
+
     SplayNode *node = find_node(cache, page_id);
- 
-    if (!node) {
-        cache->misses++;
 
-        evict_if_needed(cache);
-
-        node = insert_node(cache, page_id);
-        if (!node) return -1;
-    } else {
+    if (node) {
         cache->hits++;
+
+        memcpy(node->data, buffer, BLOCK_SIZE);
+        node->dirty = 1;
+
+        pthread_mutex_unlock(&cache->mutex);
+        return 1;
     }
- 
+
+    cache->misses++;
+
+    evict_if_needed(cache);
+
+    node = insert_node(cache, page_id);
+    if (!node) {
+        pthread_mutex_unlock(&cache->mutex);
+        return -1;
+    }
+
     memcpy(node->data, buffer, BLOCK_SIZE);
     node->dirty = 1;
 
+    pthread_mutex_unlock(&cache->mutex);
     return 0;
 }
 
@@ -365,8 +385,19 @@ static int calc_depth(SplayNode *root, int d) {
 }
 
 double splay_cache_avg_depth(SplayCache *cache) {
-    if (!cache || !cache->root || cache->size == 0) return 0.0;
-    return (double)calc_depth(cache->root, 1) / (double)cache->size;
+    if (!cache) return 0.0;
+
+    pthread_mutex_lock(&cache->mutex);
+
+    double resultado = 0.0;
+
+    if (cache->root && cache->size > 0) {
+        resultado = (double)calc_depth(cache->root, 1) / (double)cache->size;
+    }
+
+    pthread_mutex_unlock(&cache->mutex);
+
+    return resultado;
 }
 
 void splay_cache_print_stats(SplayCache *cache) {
@@ -415,12 +446,18 @@ void splay_cache_close(SplayCache *cache) {
     if (!cache)
         return;
 
+    pthread_mutex_lock(&cache->mutex);
+
     flush_tree(cache, cache->root);
 
     fflush(cache->file);
     fclose(cache->file);
 
     free_tree(cache->root);
+
+    pthread_mutex_unlock(&cache->mutex);
+
+    pthread_mutex_destroy(&cache->mutex);
 
     free(cache);
 }
