@@ -290,39 +290,8 @@ static SplayNode *insert_node(SplayCache *cache, uint64_t page_id) {
     return node;
 }
 
-int splay_cache_read(SplayCache *cache, uint64_t page_id, char *out) {
-    if (!cache || !out) return -1;
- 
-    cache->total_accesses++;
- 
-    SplayNode *node = find_node(cache, page_id);
- 
-    if (node) {
-        cache->hits++;
-        memcpy(out, node->data, BLOCK_SIZE);
-        return 1;
-    }
-    cache->misses++;
-    evict_if_needed(cache);
- 
-    node = insert_node(cache, page_id);
-    if (!node) return -1;
- 
-    long offset = (long)page_id * BLOCK_SIZE;
-    if (fseek(cache->file, offset, SEEK_SET) == 0) {
-        size_t n = fread(node->data, 1, BLOCK_SIZE, cache->file);
-        if (n < BLOCK_SIZE){
-            memset(node->data + n, 0, BLOCK_SIZE - n);
-        }
-    }
- 
-    memcpy(out, node->data, BLOCK_SIZE);
-
-    return 0;
-}
-
-void splay_cache_write(SplayCache *cache, uint64_t page_id, const char *data) {
-    if (!cache || !data) return;
+int splay_cache_read(SplayCache *cache, uint64_t page_id, void *buffer) {
+    if (!cache || !buffer) return -1;
  
     cache->total_accesses++;
  
@@ -330,15 +299,43 @@ void splay_cache_write(SplayCache *cache, uint64_t page_id, const char *data) {
  
     if (!node) {
         cache->misses++;
+
         evict_if_needed(cache);
+
         node = insert_node(cache, page_id);
-        if (!node) return;
+        if (!node) return -1;
     } else {
         cache->hits++;
     }
  
-    memcpy(node->data, data, BLOCK_SIZE);
+    memcpy(node->data, buffer, BLOCK_SIZE);
     node->dirty = 1;
+
+    return 0;
+}
+
+int splay_cache_write(SplayCache *cache, uint64_t page_id, const void *buffer) {
+    if (!cache || !buffer) return -1;
+ 
+    cache->total_accesses++;
+ 
+    SplayNode *node = find_node(cache, page_id);
+ 
+    if (!node) {
+        cache->misses++;
+
+        evict_if_needed(cache);
+
+        node = insert_node(cache, page_id);
+        if (!node) return -1;
+    } else {
+        cache->hits++;
+    }
+ 
+    memcpy(node->data, buffer, BLOCK_SIZE);
+    node->dirty = 1;
+
+    return -1;
 }
 
 static int calc_depth(SplayNode *root, int d) {
