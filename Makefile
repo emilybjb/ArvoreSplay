@@ -2,7 +2,7 @@ CC      = gcc
 CFLAGS  = -Wall -Wextra -O2 -g -pthread
 LDFLAGS = -lm
 
-SRCS    = main.c cache.c splay_cache.c metrics.c
+SRCS    = main.c cache.c splay_cache.c metrics.c experiments.c
 OBJS    = $(SRCS:.c=.o)
 TARGET  = page_cache
 
