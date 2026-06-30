@@ -229,6 +229,29 @@ void cache_print_stats(Cache* cache) {
     printf("Páginas sujas gravadas: %zu\n", cache->dirty_writes);
 }
 
+void cache_write_csv(FILE* csv, Cache* cache, const char* politica,
+    const char* carga, int threads, int acessos,
+    double tempo) {
+double hit_ratio = 0.0;
+
+if (cache->total_accesses > 0) {
+hit_ratio = (double) cache->hits / cache->total_accesses * 100.0;
+}
+
+fprintf(csv, "%s,%s,%d,%d,%zu,%zu,%.2f,%zu,%zu,%.6f,%.2f\n",
+politica,
+carga,
+threads,
+acessos,
+cache->hits,
+cache->misses,
+hit_ratio,
+cache->evictions,
+cache->dirty_writes,
+tempo,
+0.0);
+}
+
 void cache_close(Cache* cache) {
     if (!cache) return;
 

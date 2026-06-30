@@ -7,6 +7,7 @@
 #include <time.h>
 #include <math.h>
 #include <pthread.h>
+#include "metrics.h"
 
 #define NUM_ACESSOS 10000
 #define CACHE_CAPACITY 8
