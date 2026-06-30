@@ -6,15 +6,27 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <pthread.h>
 
 #define NUM_ACESSOS 10000
 #define CACHE_CAPACITY 8
 #define NUM_PAGINAS 64
 
+#define NUM_THREADS 4
+#define ACESSOS_POR_THREAD (NUM_ACESSOS / NUM_THREADS)
+
 typedef enum {
     PADRAO_UNIFORME,
     PADRAO_ZIPFIANO
 } PadraoAcesso;
+
+typedef struct {
+    Cache* lru_cache;
+    SplayCache* splay_cache;
+    PadraoAcesso padrao;
+    int usar_splay;
+    unsigned int seed;
+} ThreadArgs;
 
 uint64_t gerar_uniforme() {
     return rand() % NUM_PAGINAS;
@@ -40,7 +52,40 @@ uint64_t gerar_pagina(PadraoAcesso padrao) {
     return gerar_zipfiano();
 }
 
+void* worker_thread(void* arg) {
+    ThreadArgs* args = (ThreadArgs*) arg;
+
+    char buffer[BLOCK_SIZE];
+
+    for (int i = 0; i < ACESSOS_POR_THREAD; i++) {
+        uint64_t page_id;
+
+        double r = (double) rand_r(&args->seed) / RAND_MAX;
+
+        if (args->padrao == PADRAO_UNIFORME) {
+            page_id = rand_r(&args->seed) % NUM_PAGINAS;
+        } else {
+            if (r < 0.50) {
+                page_id = rand_r(&args->seed) % 4;
+            } else if (r < 0.80) {
+                page_id = 4 + (rand_r(&args->seed) % 12);
+            } else {
+                page_id = 16 + (rand_r(&args->seed) % 48);
+            }
+        }
+
+        if (args->usar_splay) {
+            splay_cache_read(args->splay_cache, page_id, buffer);
+        } else {
+            cache_read(args->lru_cache, page_id, buffer);
+        }
+    }
+
+    return NULL;
+}
+
 void testar_lru(PadraoAcesso padrao) {
+
     Cache* cache = cache_open("data.bin", CACHE_CAPACITY);
 
     if (cache == NULL) {
@@ -48,13 +93,24 @@ void testar_lru(PadraoAcesso padrao) {
         return;
     }
 
-    char buffer[BLOCK_SIZE];
+    pthread_t threads[NUM_THREADS];
+    ThreadArgs args[NUM_THREADS];
 
     clock_t inicio = clock();
 
-    for (int i = 0; i < NUM_ACESSOS; i++) {
-        uint64_t page_id = gerar_pagina(padrao);
-        cache_read(cache, page_id, buffer);
+    for (int i = 0; i < NUM_THREADS; i++) {
+
+        args[i].lru_cache = cache;
+        args[i].splay_cache = NULL;
+        args[i].padrao = padrao;
+        args[i].usar_splay = 0;
+        args[i].seed = 42 + i;
+
+        pthread_create(&threads[i], NULL, worker_thread, &args[i]);
+    }
+
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(threads[i], NULL);
     }
 
     clock_t fim = clock();
@@ -69,6 +125,7 @@ void testar_lru(PadraoAcesso padrao) {
 }
 
 void testar_splay(PadraoAcesso padrao) {
+
     SplayCache* cache = splay_cache_open("data.bin", CACHE_CAPACITY);
 
     if (cache == NULL) {
@@ -76,13 +133,24 @@ void testar_splay(PadraoAcesso padrao) {
         return;
     }
 
-    char buffer[BLOCK_SIZE];
+    pthread_t threads[NUM_THREADS];
+    ThreadArgs args[NUM_THREADS];
 
     clock_t inicio = clock();
 
-    for (int i = 0; i < NUM_ACESSOS; i++) {
-        uint64_t page_id = gerar_pagina(padrao);
-        splay_cache_read(cache, page_id, buffer);
+    for (int i = 0; i < NUM_THREADS; i++) {
+
+        args[i].lru_cache = NULL;
+        args[i].splay_cache = cache;
+        args[i].padrao = padrao;
+        args[i].usar_splay = 1;
+        args[i].seed = 42 + i;
+
+        pthread_create(&threads[i], NULL, worker_thread, &args[i]);
+    }
+
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(threads[i], NULL);
     }
 
     clock_t fim = clock();
@@ -91,7 +159,8 @@ void testar_splay(PadraoAcesso padrao) {
 
     printf("\n========== RESULTADO SPLAY ==========\n");
     splay_cache_print_stats(cache);
-    printf("Profundidade media da Splay: %.2f\n", splay_cache_avg_depth(cache));
+    printf("Profundidade media da Splay: %.2f\n",
+           splay_cache_avg_depth(cache));
     printf("Tempo Splay: %.6f segundos\n", tempo);
 
     splay_cache_close(cache);
