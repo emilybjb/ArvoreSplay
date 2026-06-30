@@ -87,7 +87,7 @@ void* worker_thread(void* arg) {
     return NULL;
 }
 
-void testar_lru(PadraoAcesso padrao) {
+void testar_lru(PadraoAcesso padrao, const char* nome_carga, FILE* csv) {
 
     Cache* cache = cache_open("data.bin", CACHE_CAPACITY);
 
@@ -124,10 +124,34 @@ void testar_lru(PadraoAcesso padrao) {
     cache_print_stats(cache);
     printf("Tempo LRU: %.6f segundos\n", tempo);
 
+    CacheStats stats = cache_get_stats(cache);
+
+double hit_ratio = 0.0;
+
+if (stats.total_accesses > 0) {
+    hit_ratio = (double) stats.hits / stats.total_accesses * 100.0;
+}
+
+ResultadoBenchmark resultado = {
+    .politica = "LRU",
+    .carga = nome_carga,
+    .threads = NUM_THREADS,
+    .acessos = NUM_ACESSOS,
+    .hits = stats.hits,
+    .misses = stats.misses,
+    .hit_ratio = hit_ratio,
+    .evictions = stats.evictions,
+    .dirty_writes = stats.dirty_writes,
+    .tempo = tempo,
+    .avg_depth = 0.0
+};
+
+metrics_write_result(csv, resultado);
+
     cache_close(cache);
 }
 
-void testar_splay(PadraoAcesso padrao) {
+void testar_splay(PadraoAcesso padrao, const char* nome_carga, FILE* csv) {
 
     SplayCache* cache = splay_cache_open("data.bin", CACHE_CAPACITY);
 
@@ -166,10 +190,34 @@ void testar_splay(PadraoAcesso padrao) {
            splay_cache_avg_depth(cache));
     printf("Tempo Splay: %.6f segundos\n", tempo);
 
+    SplayCacheStats stats = splay_cache_get_stats(cache);
+
+double hit_ratio = 0.0;
+
+if (stats.total_accesses > 0) {
+    hit_ratio = (double) stats.hits / stats.total_accesses * 100.0;
+}
+
+ResultadoBenchmark resultado = {
+    .politica = "SPLAY",
+    .carga = nome_carga,
+    .threads = NUM_THREADS,
+    .acessos = NUM_ACESSOS,
+    .hits = stats.hits,
+    .misses = stats.misses,
+    .hit_ratio = hit_ratio,
+    .evictions = stats.evictions,
+    .dirty_writes = stats.dirty_writes,
+    .tempo = tempo,
+    .avg_depth = stats.avg_depth
+};
+
+metrics_write_result(csv, resultado);
+
     splay_cache_close(cache);
 }
 
-void executar_benchmark(const char* nome, PadraoAcesso padrao) {
+void executar_benchmark(const char* nome, PadraoAcesso padrao, FILE* csv) {
     printf("\n\n=====================================\n");
     printf("BENCHMARK: %s\n", nome);
     printf("Acessos: %d\n", NUM_ACESSOS);
@@ -178,13 +226,26 @@ void executar_benchmark(const char* nome, PadraoAcesso padrao) {
     printf("=====================================\n");
 
     srand(42);
-    testar_lru(padrao);
+    testar_lru(padrao, nome, csv);
 
     srand(42);
-    testar_splay(padrao);
+    testar_splay(padrao, nome, csv);
 }
 
 void executar_experimentos(void) {
-    executar_benchmark("Carga uniforme", PADRAO_UNIFORME);
-    executar_benchmark("Carga zipfiana", PADRAO_ZIPFIANO);
+    FILE* csv = fopen("resultados.csv", "w");
+
+    if (!csv) {
+        printf("Erro ao criar resultados.csv\n");
+        return;
+    }
+
+    metrics_write_header(csv);
+
+    executar_benchmark("uniforme", PADRAO_UNIFORME, csv);
+    executar_benchmark("zipfiana", PADRAO_ZIPFIANO, csv);
+
+    fclose(csv);
+
+    printf("\nArquivo resultados.csv gerado com sucesso.\n");
 }

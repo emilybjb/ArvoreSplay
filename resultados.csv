@@ -1,0 +1,5 @@
+politica,carga,threads,acessos,hits,misses,hit_ratio,evictions,dirty_writes,tempo,avg_depth
+LRU,uniforme,4,10000,1253,8747,12.53,8739,0,0.121506,0.00
+SPLAY,uniforme,4,10000,1218,8782,12.18,8774,0,0.052129,4.50
+LRU,zipfiana,4,10000,4551,5449,45.51,5441,0,0.027080,0.00
+SPLAY,zipfiana,4,10000,4726,5274,47.26,5266,0,0.031132,2.88

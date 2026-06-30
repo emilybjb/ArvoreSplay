@@ -229,6 +229,27 @@ void cache_print_stats(Cache* cache) {
     printf("Páginas sujas gravadas: %zu\n", cache->dirty_writes);
 }
 
+CacheStats cache_get_stats(Cache* cache) {
+    CacheStats stats = {0};
+
+    if (!cache) {
+        return stats;
+    }
+
+    pthread_mutex_lock(&cache->mutex);
+
+    stats.hits = cache->hits;
+    stats.misses = cache->misses;
+    stats.total_accesses = cache->total_accesses;
+    stats.evictions = cache->evictions;
+    stats.dirty_writes = cache->dirty_writes;
+    stats.avg_depth = 0.0;
+
+    pthread_mutex_unlock(&cache->mutex);
+
+    return stats;
+}
+
 void cache_write_csv(FILE* csv, Cache* cache, const char* politica,
     const char* carga, int threads, int acessos,
     double tempo) {

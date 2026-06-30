@@ -427,6 +427,37 @@ void splay_cache_print_stats(SplayCache *cache) {
     printf("=======================\n");
 }
 
+SplayCacheStats splay_cache_get_stats(SplayCache* cache) {
+    SplayCacheStats stats;
+
+    stats.hits = 0;
+    stats.misses = 0;
+    stats.total_accesses = 0;
+    stats.evictions = 0;
+    stats.dirty_writes = 0;
+    stats.avg_depth = 0.0;
+
+    if (!cache) {
+        return stats;
+    }
+
+    pthread_mutex_lock(&cache->mutex);
+
+    stats.hits = cache->hits;
+    stats.misses = cache->misses;
+    stats.total_accesses = cache->total_accesses;
+    stats.evictions = cache->evictions;
+    stats.dirty_writes = cache->dirty_writes;
+
+    if (cache->root && cache->size > 0) {
+        stats.avg_depth = (double)calc_depth(cache->root, 1) / (double)cache->size;
+    }
+
+    pthread_mutex_unlock(&cache->mutex);
+
+    return stats;
+}
+
 static void flush_tree(SplayCache *cache, SplayNode *root) {
     if (!root) return;
     flush_tree(cache, root->left);

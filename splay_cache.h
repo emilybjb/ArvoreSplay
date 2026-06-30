@@ -10,6 +10,15 @@
 
 typedef struct SplayCache SplayCache;
 
+typedef struct {
+    size_t hits;
+    size_t misses;
+    size_t total_accesses;
+    size_t evictions;
+    size_t dirty_writes;
+    double avg_depth;
+} SplayCacheStats;
+
 SplayCache* splay_cache_open(const char* filename, size_t capacity);
 
 
@@ -24,5 +33,7 @@ double splay_cache_avg_depth(SplayCache* cache);
 void splay_cache_print_stats(SplayCache* cache);
 
 void splay_cache_close(SplayCache* cache);
+
+SplayCacheStats splay_cache_get_stats(SplayCache* cache);
 
 #endif
