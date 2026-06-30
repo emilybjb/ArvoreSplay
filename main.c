@@ -16,8 +16,7 @@ int main() {
     clock_t start = clock();
 
     for (int i = 0; i < 10000; i++) {
-        uint64_t page_id = i % 16;
-
+        uint64_t page_id = i % 4;
         cache_read(cache, page_id, buffer);
     }
 
