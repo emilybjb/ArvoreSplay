@@ -109,6 +109,8 @@ static void splay(SplayCache* sc, SplayNode* x) {
 
 SplayCache *splay_cache_open(const char *filename, size_t capacity)
 {
+     if (!filename || capacity == 0) return NULL;
+
     SplayCache *sc = calloc(1, sizeof(SplayCache));
 
     if (sc == NULL)
@@ -116,10 +118,10 @@ SplayCache *splay_cache_open(const char *filename, size_t capacity)
 
     sc->file = fopen(filename, "r+b");
 
-    if (sc->file == NULL)
+    if (!sc->file)
         sc->file = fopen(filename, "w+b");
 
-    if (sc->file == NULL) {
+    if (!sc->file) {
         free(sc);
         return NULL;
     }
@@ -146,6 +148,111 @@ static SplayNode *find_node(SplayCache *cache, uint64_t page_id) {
     return NULL;
 }
 
+static int flush_node(SplayCache *cache, SplayNode *node) {
+    if (!node->dirty) return 1;
+ 
+    long offset = (long)(node->page_id) * BLOCK_SIZE;
+    if (fseek(cache->file, offset, SEEK_SET) != 0) return 0;
+    if (fwrite(node->data, 1, BLOCK_SIZE, cache->file) != BLOCK_SIZE) return 0;
+ 
+    node->dirty = 0;
+    cache->dirty_writes++;
+    return 1;
+}
+
+static SplayNode *find_cold_leaf(SplayNode *root) {
+    if (!root) return NULL;
+ 
+    int cap = 64;
+    SplayNode **stack  = malloc(cap * sizeof(SplayNode *));
+    int       *depth_a = malloc(cap * sizeof(int));
+ 
+    if (!stack || !depth_a) {
+        free(stack);
+        free(depth_a);
+        return NULL;
+    }
+ 
+    int top = 0;
+    SplayNode *best = NULL;
+    int best_depth  = -1;
+ 
+    stack[top]   = root;
+    depth_a[top++] = 0;
+ 
+    while (top) {
+        if (top + 2 > cap) {
+            cap *= 2;
+            SplayNode **ns = realloc(stack,  cap * sizeof(SplayNode *));
+            int       *nd  = realloc(depth_a, cap * sizeof(int));
+            if (!ns || !nd) { free(stack); free(depth_a); return best; }
+            stack   = ns;
+            depth_a = nd;
+        }
+ 
+        SplayNode *n = stack[--top];
+        int d        = depth_a[top];
+ 
+        if (!n->left && !n->right) {
+            if (d > best_depth) { best = n; best_depth = d; }
+        }
+ 
+        if (n->left)  { stack[top] = n->left;  depth_a[top++] = d + 1; }
+        if (n->right) { stack[top] = n->right; depth_a[top++] = d + 1; }
+    }
+ 
+    free(stack);
+    free(depth_a);
+    return best;
+}
+
+static void remove_node(SplayCache *cache, SplayNode *node) {
+    if (!node) return;
+
+    splay(cache, node);
+
+    if (!node->left) {
+        cache->root = node->right;
+        if(cache->root)
+            cache->root->parent = NULL;
+    } else if (!node->right) {
+        cache->root = node->left;
+        if(cache->root)
+            cache->root->parent = NULL;
+    } else {
+        SplayNode *right_subtree = node->right;
+        cache->root = node->left;
+        cache->root->parent = NULL;
+
+        SplayNode *x = cache->root;
+        while (x->right) x = x->right;
+
+        splay(cache, x);
+        x->right = right_subtree;
+        right_subtree->parent = x;
+        cache->root = x;
+    }
+
+    free(node);
+    cache->size--;
+}
+
+static void evict_if_needed(SplayCache *cache) {
+    while (cache->size >= cache->capacity) {
+
+        SplayNode *victim = find_cold_leaf(cache->root);
+
+        if (!victim)
+            return;
+
+        flush_node(cache, victim);
+
+        remove_node(cache, victim);
+
+        cache->evictions++;
+    }
+}
+
 static SplayNode *insert_node(SplayCache *cache, uint64_t page_id) {
     SplayNode *parent = NULL;
     SplayNode *cur = cache->root;
@@ -164,6 +271,7 @@ static SplayNode *insert_node(SplayCache *cache, uint64_t page_id) {
     }
 
     SplayNode *node = calloc(1, sizeof(SplayNode));
+    if (!node) return NULL;
     node->page_id = page_id;
     node->parent = parent;
 
@@ -183,27 +291,54 @@ static SplayNode *insert_node(SplayCache *cache, uint64_t page_id) {
 }
 
 int splay_cache_read(SplayCache *cache, uint64_t page_id, char *out) {
+    if (!cache || !out) return -1;
+ 
+    cache->total_accesses++;
+ 
     SplayNode *node = find_node(cache, page_id);
-
+ 
     if (node) {
+        cache->hits++;
         memcpy(out, node->data, BLOCK_SIZE);
         return 1;
     }
-
+    cache->misses++;
+    evict_if_needed(cache);
+ 
     node = insert_node(cache, page_id);
+    if (!node) return -1;
+ 
+    long offset = (long)page_id * BLOCK_SIZE;
+    if (fseek(cache->file, offset, SEEK_SET) == 0) {
+        size_t n = fread(node->data, 1, BLOCK_SIZE, cache->file);
+        if (n < BLOCK_SIZE){
+            memset(node->data + n, 0, BLOCK_SIZE - n);
+        }
+    }
+ 
     memcpy(out, node->data, BLOCK_SIZE);
 
     return 0;
 }
 
 void splay_cache_write(SplayCache *cache, uint64_t page_id, const char *data) {
+    if (!cache || !data) return;
+ 
+    cache->total_accesses++;
+ 
     SplayNode *node = find_node(cache, page_id);
-
+ 
     if (!node) {
+        cache->misses++;
+        evict_if_needed(cache);
         node = insert_node(cache, page_id);
+        if (!node) return;
+    } else {
+        cache->hits++;
     }
-
+ 
     memcpy(node->data, data, BLOCK_SIZE);
+    node->dirty = 1;
 }
 
 static int calc_depth(SplayNode *root, int d) {
@@ -215,81 +350,42 @@ static int calc_depth(SplayNode *root, int d) {
 }
 
 double splay_cache_avg_depth(SplayCache *cache) {
-    if (!cache->root) return 0.0;
-
-    int total = calc_depth(cache->root, 1);
-    return (double)total / cache->size;
+    if (!cache || !cache->root || cache->size == 0) return 0.0;
+    return (double)calc_depth(cache->root, 1) / (double)cache->size;
 }
 
 void splay_cache_print_stats(SplayCache *cache) {
-    printf("size=%zu avg_depth=%.2f\n",
+    if (!cache)
+        return;
+
+    double hit_rate = 0.0;
+
+    if (cache->total_accesses > 0)
+        hit_rate = (100.0 * cache->hits) / cache->total_accesses;
+
+    printf("===== Splay Cache =====\n");
+    printf("Pages in cache : %zu/%zu\n",
            cache->size,
+           cache->capacity);
+
+    printf("Hits           : %zu\n", cache->hits);
+    printf("Misses         : %zu\n", cache->misses);
+    printf("Hit rate       : %.2f%%\n", hit_rate);
+
+    printf("Evictions      : %zu\n", cache->evictions);
+    printf("Dirty writes   : %zu\n", cache->dirty_writes);
+
+    printf("Average depth  : %.2f\n",
            splay_cache_avg_depth(cache));
+
+    printf("=======================\n");
 }
 
-static SplayNode *find_cold_leaf(SplayNode *root) {
-    if (!root) return NULL;
-
-    SplayNode *stack[1024];
-    int depth[1024];
-    int top = 0;
-
-    SplayNode *best = NULL;
-    int best_depth = -1;
-
-    stack[top] = root;
-    depth[top++] = 0;
-
-    while (top) {
-        SplayNode *n = stack[--top];
-        int d = depth[top];
-
-        if (!n->left && !n->right) {
-            if (d > best_depth) {
-                best = n;
-                best_depth = d;
-            }
-        }
-
-        if (n->left) {
-            stack[top] = n->left;
-            depth[top++] = d + 1;
-        }
-
-        if (n->right) {
-            stack[top] = n->right;
-            depth[top++] = d + 1;
-        }
-    }
-
-    return best;
-}
-
-static void remove_node(SplayCache *cache, SplayNode *node) {
-    if (!node) return;
-
-    splay(cache, node);
-
-    if (!node->left) {
-        cache->root = node->right;
-    } else {
-        SplayNode *x = node->left;
-        while (x->right) x = x->right;
-
-        splay(cache, x);
-        x->right = node->right;
-        cache->root = x;
-    }
-
-    free(node);
-    cache->size--;
-}
-
-static void flush_tree(SplayNode *root) {
+static void flush_tree(SplayCache *cache, SplayNode *root) {
     if (!root) return;
-
-    flush_tree(root->left);
-    flush_tree(root->right);
+    flush_tree(cache, root->left);
+    flush_tree(cache, root->right);
+    flush_node(cache, root);
 }
 
 static void free_tree(SplayNode *root) {
@@ -301,8 +397,15 @@ static void free_tree(SplayNode *root) {
 }
 
 void splay_cache_close(SplayCache *cache) {
-    if (!cache) return;
+    if (!cache)
+        return;
+
+    flush_tree(cache, cache->root);
+
+    fflush(cache->file);
+    fclose(cache->file);
 
     free_tree(cache->root);
+
     free(cache);
 }
